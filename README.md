@@ -1,6 +1,6 @@
-# news-mcp
+# open-news-mcp
 
-News MCP server backed by GDELT search.
+News MCP server backed by the world news.
 
 ## Setup
 
