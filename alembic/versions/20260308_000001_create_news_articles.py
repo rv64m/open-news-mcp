@@ -29,7 +29,7 @@ def upgrade() -> None:
         sa.Column("social_image", sa.Text(), nullable=True),
         sa.Column("tags", sa.JSON(), nullable=False),
         sa.Column("raw_payload", sa.JSON(), nullable=False),
-        sa.Column("is_embedded", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("is_embedded", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),

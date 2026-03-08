@@ -20,7 +20,7 @@ def upgrade() -> None:
         sa.Column("lang", sa.String(length=32), nullable=True),
         sa.Column("tags", sa.JSON(), nullable=False),
         sa.Column("feed_url", sa.Text(), nullable=False),
-        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.text("true")),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )

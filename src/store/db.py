@@ -40,10 +40,10 @@ def resolve_alembic_database_url() -> str | None:
 
     url = make_url(database_url)
     if url.drivername == _SQLITE_ASYNC_DRIVER:
-        return str(url.set(drivername="sqlite"))
+        return url.set(drivername="sqlite").render_as_string(hide_password=False)
     if url.drivername == _POSTGRES_ASYNC_DRIVER:
-        return str(url.set(drivername="postgresql+psycopg"))
-    return str(url)
+        return url.set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+    return url.render_as_string(hide_password=False)
 
 
 def get_engine() -> AsyncEngine | None:
