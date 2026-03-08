@@ -55,13 +55,13 @@ NEWS_DATABASE_AUTO_MIGRATE=true
 One-shot sync:
 
 ```bash
-uv run python commands/sync_feeds.py --once
+uv run python commands/sync.py --once
 ```
 
 Loop worker with in-process scheduling:
 
 ```bash
-uv run python commands/sync_feeds.py --loop
+uv run python commands/sync.py --loop
 ```
 
-`sync_feeds.py` will upsert the source catalog and insert new articles into the local database. `search_news` and `list_sources` read from that database instead of querying GDELT directly.
+`sync.py` will upsert the source catalog and insert new articles into the local database. Pass `--embed` when you want the same run to vectorize newly inserted news after each sync cycle.

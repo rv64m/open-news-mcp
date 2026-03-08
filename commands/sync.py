@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import logging
+import os
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -22,11 +24,20 @@ if str(ROOT) not in sys.path:
 
 from src.config import settings
 from src.core.feeds import ALL_SOURCES, SOURCE_GROUPS, Source
+from src.embedding import build_news_embedding_text, get_embedding_provider
 from src.store.db import resolve_database_url
-from src.store import PersistMode, persist_news_payloads, persist_sources
+from src.store import (
+    PersistMode,
+    fetch_news_by_ids,
+    mark_news_as_embedded,
+    persist_news_payloads,
+    persist_sources,
+)
+from src.vector import get_vector_store
+from src.vector.base import VectorPoint
 
 
-logger = logging.getLogger("sync_feeds")
+logger = logging.getLogger("sync")
 
 
 @dataclass(slots=True)
@@ -35,6 +46,7 @@ class FeedSyncResult:
     fetched: int = 0
     inserted: int = 0
     skipped: int = 0
+    article_ids: list[int] | None = None
     error: str | None = None
 
 
@@ -43,10 +55,69 @@ def parse_args() -> argparse.Namespace:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--once", action="store_true", help="Run one sync cycle and exit.")
     mode.add_argument("--loop", action="store_true", help="Run continuously with in-process scheduling.")
+    parser.add_argument("--embed", action="store_true", help="Run embedding after each sync cycle.")
     parser.add_argument("--categories", nargs="*", help="Only sync the provided feed categories.")
     parser.add_argument("--sources", nargs="*", help="Only sync the provided source names.")
-    parser.add_argument("--log-level", default="INFO", help="Logging level.")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
     return parser.parse_args()
+
+
+def _validate_embedding_enabled() -> None:
+    if not settings.embedding_backend:
+        raise SystemExit("Embedding is not configured. Set NEWS_EMBEDDING_BACKEND first.")
+    if not settings.vector_backend:
+        raise SystemExit("Vector store is not configured. Set NEWS_VECTOR_BACKEND first.")
+
+
+def _vector_point_id(url: str) -> str:
+    return hashlib.sha256(url.strip().encode("utf-8")).hexdigest()
+
+
+def _build_vector_payload(article) -> dict[str, object]:
+    return {
+        "article_id": article.id,
+        "url": article.url,
+        "title": article.title,
+        "source": article.source_name,
+        "category": article.source_category,
+        "tier": article.source_tier,
+        "domain": article.domain,
+        "published_at": article.published_at.isoformat() if article.published_at else None,
+    }
+
+
+def _build_embedding_payload(article) -> dict[str, object]:
+    return {
+        "name": article.source_name,
+        "url": article.url,
+        "category": article.source_category,
+        "tags": list(article.tags or []),
+        "lang": article.source_lang,
+        "tier": article.source_tier,
+        "title": article.title,
+        "domain": article.domain,
+        "published_at": article.published_at.isoformat() if article.published_at else None,
+        "language": article.article_language,
+    }
+
+
+def _configure_logging(level_name: str) -> None:
+    normalized_level = getattr(logging, level_name.upper(), logging.INFO)
+    logging.basicConfig(
+        level=normalized_level,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        force=True,
+    )
+    library_level = logging.DEBUG if normalized_level <= logging.DEBUG else logging.WARNING
+    transport_level = logging.DEBUG if normalized_level <= logging.DEBUG else logging.WARNING
+    logging.getLogger("sentence_transformers").setLevel(library_level)
+    logging.getLogger("sentence_transformers.SentenceTransformer").setLevel(library_level)
+    logging.getLogger("transformers").setLevel(library_level)
+    logging.getLogger("huggingface_hub").setLevel(library_level)
+    logging.getLogger("httpx").setLevel(transport_level)
+    logging.getLogger("httpcore").setLevel(transport_level)
+    if normalized_level > logging.DEBUG:
+        os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 
 
 def _flatten_sources(categories: list[str] | None, source_names: list[str] | None) -> list[Source]:
@@ -59,6 +130,7 @@ def _flatten_sources(categories: list[str] | None, source_names: list[str] | Non
         names = set(source_names)
         selected = [source for source in selected if source.name in names]
 
+    # A source can be selected through multiple categories; de-duplicate by stable source name.
     deduped: dict[str, Source] = {}
     for source in selected:
         deduped[source.name] = source
@@ -105,6 +177,7 @@ def _entry_to_payload(source: Source, entry: feedparser.FeedParserDict) -> dict[
     if not link or not title:
         return None
 
+    # Merge static source tags with feed item tags so downstream search/query can use both.
     tags = list(source.tags)
     for tag in entry.get("tags", []) or []:
         term = getattr(tag, "term", None) or tag.get("term")
@@ -148,13 +221,17 @@ async def _fetch_feed(client: httpx.AsyncClient, source: Source) -> list[dict[st
 async def _sync_source(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, source: Source) -> FeedSyncResult:
     async with semaphore:
         try:
+            logger.debug("syncing source: source=%s url=%s", source.name, source.url)
             payloads = await _fetch_feed(client, source)
+            logger.debug("fetched feed items: source=%s count=%s", source.name, len(payloads))
+            # Sync uses INSERT_ONLY so we only embed articles that are newly inserted in this cycle.
             stored = await persist_news_payloads(payloads, mode=PersistMode.INSERT_ONLY)
             return FeedSyncResult(
                 source=source,
                 fetched=len(payloads),
                 inserted=stored.inserted,
                 skipped=stored.skipped,
+                article_ids=stored.article_ids,
                 error=stored.error,
             )
         except Exception as exc:
@@ -198,7 +275,48 @@ def _log_cycle(results: list[FeedSyncResult]) -> None:
         logger.warning("feed failed: source=%s error=%s", result.source.name, result.error)
 
 
-async def run_loop(sources: list[Source]) -> None:
+async def _embed_article_ids(article_ids: list[int]) -> None:
+    if not article_ids:
+        logger.info("no newly inserted articles to embed")
+        return
+
+    articles = await fetch_news_by_ids(article_ids)
+    pending_articles = [article for article in articles if not article.is_embedded]
+    if not pending_articles:
+        logger.info("selected articles are already embedded: count=%s", len(articles))
+        return
+
+    logger.info("embedding selected articles: requested=%s pending=%s", len(article_ids), len(pending_articles))
+    embedding_provider = get_embedding_provider()
+    vector_store = get_vector_store()
+    texts = [build_news_embedding_text(_build_embedding_payload(article)) for article in pending_articles]
+    vectors = embedding_provider.embed_texts(texts)
+    if not vectors:
+        logger.info("embedding returned no vectors")
+        return
+
+    vector_store.ensure_collection(
+        collection_name=settings.vector_collection,
+        vector_size=len(vectors[0]),
+        distance=settings.vector_distance,
+    )
+    vector_store.upsert(
+        collection_name=settings.vector_collection,
+        points=[
+            VectorPoint(
+                id=_vector_point_id(article.url),
+                vector=vector,
+                payload=_build_vector_payload(article),
+            )
+            for article, vector in zip(pending_articles, vectors, strict=True)
+        ],
+    )
+    marked = await mark_news_as_embedded([article.id for article in pending_articles])
+    logger.info("embed sweep finished: selected=%s embedded=%s marked=%s", len(pending_articles), len(vectors), marked)
+
+
+async def run_loop(sources: list[Source], *, embed: bool = False) -> None:
+    # Track each source independently so high-tier feeds can run more frequently than low-tier feeds.
     next_run_at = {source.name: 0.0 for source in sources}
 
     while True:
@@ -212,38 +330,53 @@ async def run_loop(sources: list[Source]) -> None:
         logger.info("starting sync cycle for %s feeds", len(due_sources))
         results = await run_cycle(due_sources)
         _log_cycle(results)
+        if embed:
+            # In loop mode we only embed the articles inserted by this sync cycle, not the whole backlog.
+            article_ids = [article_id for result in results for article_id in (result.article_ids or [])]
+            logger.info("starting embed sweep after sync cycle")
+            await _embed_article_ids(article_ids)
 
         loop_now = asyncio.get_running_loop().time()
         for source in due_sources:
             next_run_at[source.name] = loop_now + _interval_for_source(source)
 
 
+async def run_once(sources: list[Source], *, embed: bool = False) -> None:
+    results = await run_cycle(sources)
+    _log_cycle(results)
+    if embed:
+        # One-shot mode follows the same incremental rule as loop mode: only embed this cycle's inserts.
+        article_ids = [article_id for result in results for article_id in (result.article_ids or [])]
+        logger.info("starting embed sweep after sync cycle")
+        await _embed_article_ids(article_ids)
+
+    failures = [result for result in results if result.error]
+    if failures:
+        raise SystemExit(1)
+
+
 async def main() -> None:
     args = parse_args()
-    logging.basicConfig(
-        level=getattr(logging, str(args.log_level).upper(), logging.INFO),
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
+    _configure_logging("DEBUG" if args.verbose else "INFO")
 
     sources = _flatten_sources(args.categories, args.sources)
     if not sources:
         raise SystemExit("No sources selected.")
     if not resolve_database_url():
         raise SystemExit("Database is not configured. Set NEWS_DATABASE_BACKEND/NEWS_DATABASE_URL first.")
+    if args.embed:
+        _validate_embedding_enabled()
 
     logger.info("selected %s sources", len(sources))
     synced = await persist_sources(sources)
     logger.info("source catalog synced: %s records", synced)
+    
     if args.loop:
-        await run_loop(sources)
-        return
-
-    results = await run_cycle(sources)
-    _log_cycle(results)
-
-    failures = [result for result in results if result.error]
-    if failures:
-        raise SystemExit(1)
+        logger.info("starting continuous sync loop")
+        await run_loop(sources, embed=args.embed)
+    else:
+        logger.info("starting one-shot sync")
+        await run_once(sources, embed=args.embed)
 
 
 if __name__ == "__main__":
