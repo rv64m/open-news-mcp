@@ -29,12 +29,14 @@ def upgrade() -> None:
         sa.Column("social_image", sa.Text(), nullable=True),
         sa.Column("tags", sa.JSON(), nullable=False),
         sa.Column("raw_payload", sa.JSON(), nullable=False),
+        sa.Column("is_embedded", sa.Boolean(), nullable=False, server_default=sa.text("0")),
         sa.Column("first_seen_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
     )
     op.create_index("ix_news_articles_domain", "news_articles", ["domain"], unique=False)
+    op.create_index("ix_news_articles_is_embedded", "news_articles", ["is_embedded"], unique=False)
     op.create_index("ix_news_articles_published_at", "news_articles", ["published_at"], unique=False)
     op.create_index("ix_news_articles_source_category", "news_articles", ["source_category"], unique=False)
     op.create_index("ix_news_articles_source_name", "news_articles", ["source_name"], unique=False)
@@ -46,5 +48,6 @@ def downgrade() -> None:
     op.drop_index("ix_news_articles_source_name", table_name="news_articles")
     op.drop_index("ix_news_articles_source_category", table_name="news_articles")
     op.drop_index("ix_news_articles_published_at", table_name="news_articles")
+    op.drop_index("ix_news_articles_is_embedded", table_name="news_articles")
     op.drop_index("ix_news_articles_domain", table_name="news_articles")
     op.drop_table("news_articles")

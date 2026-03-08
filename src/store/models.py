@@ -49,6 +49,7 @@ class NewsArticle(Base):
     social_image: Mapped[str | None] = mapped_column(Text, nullable=True)
     tags: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     raw_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    is_embedded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0", index=True)
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

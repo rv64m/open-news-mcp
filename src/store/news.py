@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Any
 
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -24,6 +25,7 @@ class PersistResult:
     inserted: int = 0
     updated: int = 0
     skipped: int = 0
+    article_ids: list[int] | None = None
     error: str | None = None
 
     @property
@@ -66,6 +68,7 @@ def _normalize_row(payload: dict[str, Any], now: datetime) -> dict[str, Any]:
         "social_image": payload.get("social_image"),
         "tags": list(payload.get("tags") or []),
         "raw_payload": payload,
+        "is_embedded": False,
         "last_seen_at": now,
     }
 
@@ -120,19 +123,78 @@ async def persist_news_payloads(
                 "social_image": stmt.excluded.social_image,
                 "tags": stmt.excluded.tags,
                 "raw_payload": stmt.excluded.raw_payload,
+                "is_embedded": False,
                 "last_seen_at": stmt.excluded.last_seen_at,
                 "updated_at": now,
             },
         )
 
     try:
+        stmt = stmt.returning(NewsArticle.id)
         async with session_factory() as session:
             result = await session.execute(stmt)
+            article_ids = [int(article_id) for article_id in result.scalars().all()]
             await session.commit()
     except Exception as exc:
         return PersistResult(enabled=True, skipped=len(rows), error=str(exc))
 
-    affected = int(result.rowcount or 0)
+    affected = len(article_ids)
     if mode == PersistMode.INSERT_ONLY:
-        return PersistResult(enabled=True, inserted=affected, skipped=len(rows) - affected)
-    return PersistResult(enabled=True, updated=affected)
+        return PersistResult(
+            enabled=True,
+            inserted=affected,
+            skipped=len(rows) - affected,
+            article_ids=article_ids,
+        )
+    return PersistResult(enabled=True, updated=affected, article_ids=article_ids)
+
+
+async def fetch_unembedded_news(limit: int = 100) -> list[NewsArticle]:
+    session_factory = get_session_factory()
+    if session_factory is None:
+        raise RuntimeError("Database is not configured.")
+
+    stmt = (
+        select(NewsArticle)
+        .where(NewsArticle.is_embedded.is_(False))
+        .order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.id.asc())
+        .limit(max(1, min(limit, 1000)))
+    )
+    async with session_factory() as session:
+        return (await session.execute(stmt)).scalars().all()
+
+
+async def fetch_news_by_ids(article_ids: list[int]) -> list[NewsArticle]:
+    if not article_ids:
+        return []
+
+    session_factory = get_session_factory()
+    if session_factory is None:
+        raise RuntimeError("Database is not configured.")
+
+    stmt = (
+        select(NewsArticle)
+        .where(NewsArticle.id.in_(article_ids))
+        .order_by(NewsArticle.id.asc())
+    )
+    async with session_factory() as session:
+        return (await session.execute(stmt)).scalars().all()
+
+
+async def mark_news_as_embedded(article_ids: list[int]) -> int:
+    if not article_ids:
+        return 0
+
+    session_factory = get_session_factory()
+    if session_factory is None:
+        raise RuntimeError("Database is not configured.")
+
+    stmt = (
+        update(NewsArticle)
+        .where(NewsArticle.id.in_(article_ids))
+        .values(is_embedded=True)
+    )
+    async with session_factory() as session:
+        result = await session.execute(stmt)
+        await session.commit()
+    return int(result.rowcount or 0)
