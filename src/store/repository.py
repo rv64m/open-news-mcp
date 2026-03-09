@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, select
 
 from .db import get_session_factory
 from .models import NewsArticle
@@ -20,7 +20,6 @@ class NewsSearchFilters:
     categories: list[str] | None = None
     sources: list[str] | None = None
     tiers: list[int] | None = None
-    language: str | None = None
     sort: str = "DateDesc"
 
 
@@ -80,9 +79,9 @@ async def search_news_records(filters: NewsSearchFilters) -> list[NewsArticle]:
     if published_cutoff and timespan_cutoff:
         cutoff = max(published_cutoff, timespan_cutoff)
 
-    if not any((cutoff, filters.categories, filters.sources, filters.tiers, filters.language)):
+    if not any((cutoff, filters.categories, filters.sources, filters.tiers)):
         raise ValueError(
-            "At least one structured filter is required: published_after/timespan/categories/sources/tiers/language."
+            "At least one structured filter is required: published_after/timespan/categories/sources/tiers."
         )
 
     conditions = []
@@ -95,13 +94,6 @@ async def search_news_records(filters: NewsSearchFilters) -> list[NewsArticle]:
         conditions.append(NewsArticle.source_name.in_(filters.sources))
     if filters.tiers:
         conditions.append(NewsArticle.source_tier.in_(filters.tiers))
-    if filters.language:
-        conditions.append(
-            or_(
-                NewsArticle.article_language == filters.language,
-                NewsArticle.source_lang == filters.language,
-            )
-        )
 
     stmt = select(NewsArticle).where(and_(*conditions))
     if normalized_sort == "DateDesc":

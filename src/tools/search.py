@@ -47,7 +47,6 @@ async def search_news(
     categories: list[str] | None = None,
     sources: list[str] | None = None,
     tiers: list[int] | None = None,
-    language: str | None = None,
     sort: str = "DateDesc",
 ) -> str:
     """
@@ -62,7 +61,6 @@ async def search_news(
                 categories=categories,
                 sources=sources,
                 tiers=tiers,
-                language=language,
                 sort=sort,
             )
         )

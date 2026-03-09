@@ -181,6 +181,23 @@ async def fetch_news_by_ids(article_ids: list[int]) -> list[NewsArticle]:
         return (await session.execute(stmt)).scalars().all()
 
 
+async def fetch_news_by_urls(urls: list[str]) -> list[NewsArticle]:
+    if not urls:
+        return []
+
+    session_factory = get_session_factory()
+    if session_factory is None:
+        raise RuntimeError("Database is not configured.")
+
+    stmt = (
+        select(NewsArticle)
+        .where(NewsArticle.url.in_(urls))
+        .order_by(NewsArticle.id.asc())
+    )
+    async with session_factory() as session:
+        return (await session.execute(stmt)).scalars().all()
+
+
 async def mark_news_as_embedded(article_ids: list[int]) -> int:
     if not article_ids:
         return 0

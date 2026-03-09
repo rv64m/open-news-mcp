@@ -8,6 +8,7 @@ from qdrant_client.http.models import (
     Distance,
     FieldCondition,
     Filter,
+    MatchAny,
     MatchValue,
     PointStruct,
     VectorParams,
@@ -87,7 +88,9 @@ class QdrantVectorStore(VectorStore):
                 must=[
                     FieldCondition(
                         key=key,
-                        match=MatchValue(value=value),
+                        match=MatchAny(any=[item for item in value])
+                        if isinstance(value, (list, tuple, set))
+                        else MatchValue(value=value),
                     )
                     for key, value in filters.items()
                 ]

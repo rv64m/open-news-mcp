@@ -14,7 +14,6 @@ def _error_result(code: str, message: str, details: dict[str, Any] | None = None
 async def list_sources(
     categories: list[str] | None = None,
     tiers: list[int] | None = None,
-    language: str | None = None,
     limit: int = 100,
 ) -> str:
     """
@@ -24,7 +23,6 @@ async def list_sources(
         rows = await list_sources_from_db(
             categories=categories,
             tiers=tiers,
-            language=language,
             limit=limit,
         )
     except Exception as exc:

@@ -64,7 +64,6 @@ async def list_sources_from_db(
     *,
     categories: list[str] | None = None,
     tiers: list[int] | None = None,
-    language: str | None = None,
     limit: int = 100,
 ) -> list[SourceListItem]:
     session_factory = get_session_factory()
@@ -76,8 +75,6 @@ async def list_sources_from_db(
         stmt = stmt.where(SourceCatalog.category.in_(categories))
     if tiers:
         stmt = stmt.where(SourceCatalog.tier.in_(tiers))
-    if language:
-        stmt = stmt.where(SourceCatalog.lang == language)
 
     stmt = stmt.order_by(SourceCatalog.tier.asc(), SourceCatalog.category.asc(), SourceCatalog.name.asc()).limit(max(1, min(limit, 500)))
 
