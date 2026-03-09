@@ -13,6 +13,15 @@ from .common import (
 )
 
 
+def _compute_next_offset(*, offset: int, page_count: int, matched_total: int) -> int | None:
+    if page_count <= 0:
+        return None
+    candidate = offset + page_count
+    if candidate >= matched_total:
+        return None
+    return candidate
+
+
 def _serialize_datetime(value: datetime | None) -> str | None:
     if value is None:
         return None
@@ -107,7 +116,11 @@ async def search_news(
             "pagination": {
                 "limit": normalized_limit,
                 "offset": normalized_offset,
-                "next_offset": normalized_offset + len(articles),
+                "next_offset": _compute_next_offset(
+                    offset=normalized_offset,
+                    page_count=len(articles),
+                    matched_total=matched_before_pagination,
+                ),
             },
             "query_diagnostics": {
                 "matched_before_pagination": matched_before_pagination,

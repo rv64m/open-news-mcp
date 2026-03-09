@@ -35,6 +35,15 @@ def _normalize_limit(limit: int) -> int:
     return max(1, min(limit, MAX_LIMIT))
 
 
+def _compute_next_offset(*, offset: int, page_count: int, matched_total: int) -> int | None:
+    if page_count <= 0:
+        return None
+    candidate = offset + page_count
+    if candidate >= matched_total:
+        return None
+    return candidate
+
+
 def _article_matches_filters(
     article: Any,
     *,
@@ -158,7 +167,6 @@ async def _collect_ranked_articles(
     matched_all: list[Any] = []
     matched_scores: dict[int, float] = {}
     seen_dedupe_keys: set[str] = set()
-    max_needed = offset + limit
 
     for url in urls:
         article = records_by_url.get(url)
@@ -179,8 +187,6 @@ async def _collect_ranked_articles(
         seen_dedupe_keys.add(dedupe_key)
         matched_all.append(article)
         matched_scores[int(article.id)] = score_by_url[url]
-        if len(matched_all) >= max_needed:
-            break
 
     paged_articles = matched_all[offset : offset + limit]
     paged_scores = {int(article.id): matched_scores[int(article.id)] for article in paged_articles}
@@ -206,8 +212,7 @@ async def _search_ranked_articles(
     excluded_article_ids: set[int] | None = None,
     excluded_dedupe_keys: set[str] | None = None,
 ) -> tuple[list[Any], dict[int, float], set[str], dict[str, Any]]:
-    wanted = offset + limit
-    vector_limit = min(MAX_VECTOR_FETCH, max(wanted, wanted * OVERFETCH_MULTIPLIER))
+    vector_limit = MAX_VECTOR_FETCH
     hits = vector_store.search(
         collection_name=settings.vector_collection,
         vector=vector,
@@ -400,11 +405,16 @@ async def query_news(
             "pagination": {
                 "limit": normalized_limit,
                 "offset": normalized_offset,
-                "next_offset": normalized_offset + len(matched_articles),
+                "next_offset": _compute_next_offset(
+                    offset=normalized_offset,
+                    page_count=len(matched_articles),
+                    matched_total=diagnostics["matched_before_pagination"],
+                ),
             },
             "query_diagnostics": {
                 "top_score": diagnostics["top_score"],
                 "candidate_count": diagnostics["candidate_count"],
+                "candidate_count_scope": f"top_{MAX_VECTOR_FETCH}_vector_hits_after_embedding_search",
                 "matched_before_pagination": diagnostics["matched_before_pagination"],
                 "threshold_used": normalized_min_score,
                 "applied_filters": _build_applied_filters(
@@ -486,6 +496,7 @@ async def query_related_news_graph(
                     "query_diagnostics": {
                         "top_score": diagnostics["top_score"],
                         "candidate_count": diagnostics["candidate_count"],
+                        "candidate_count_scope": f"top_{MAX_VECTOR_FETCH}_vector_hits_after_embedding_search",
                         "matched_before_pagination": 0,
                         "threshold_used": normalized_min_score,
                         "applied_filters": _build_applied_filters(
@@ -548,11 +559,16 @@ async def query_related_news_graph(
             "pagination": {
                 "limit": normalized_limit,
                 "offset": normalized_offset,
-                "next_offset": normalized_offset + len(matched_articles),
+                "next_offset": _compute_next_offset(
+                    offset=normalized_offset,
+                    page_count=len(matched_articles),
+                    matched_total=diagnostics["matched_before_pagination"],
+                ),
             },
             "query_diagnostics": {
                 "top_score": diagnostics["top_score"],
                 "candidate_count": diagnostics["candidate_count"],
+                "candidate_count_scope": f"top_{MAX_VECTOR_FETCH}_vector_hits_after_embedding_search",
                 "matched_before_pagination": diagnostics["matched_before_pagination"],
                 "threshold_used": normalized_min_score,
                 "applied_filters": _build_applied_filters(
