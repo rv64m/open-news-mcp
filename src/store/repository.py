@@ -17,6 +17,7 @@ SearchSort = Literal["published_at_desc", "published_at_asc", "tier_asc", "DateD
 @dataclass(slots=True)
 class NewsSearchFilters:
     limit: int = 10
+    offset: int = 0
     published_after: str | None = None
     timespan: str | None = None
     categories: list[str] | None = None
@@ -29,16 +30,23 @@ def _normalize_limit(limit: int) -> int:
     return max(1, min(limit, MAX_LIMIT))
 
 
+def _normalize_offset(offset: int) -> int:
+    return max(0, offset)
+
+
 def _parse_published_after(value: str | None) -> datetime | None:
     if not value:
         return None
     normalized = value.strip()
-    if normalized.endswith("Z"):
-        normalized = normalized[:-1] + "+00:00"
-    parsed = datetime.fromisoformat(normalized)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+    if not normalized:
+        return None
+    try:
+        parsed = datetime.strptime(normalized, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError(
+            "published_after must use YYYY-MM-DD format (example: 2026-03-01)."
+        ) from exc
+    return parsed.replace(tzinfo=timezone.utc)
 
 
 def _parse_timespan(value: str | None) -> datetime | None:
@@ -83,6 +91,7 @@ async def search_news_records(filters: NewsSearchFilters) -> list[NewsArticle]:
         raise RuntimeError("Database is not configured.")
 
     normalized_limit = _normalize_limit(filters.limit)
+    normalized_offset = _normalize_offset(filters.offset)
     normalized_sort = _normalize_sort(filters.sort)
 
     published_cutoff = _parse_published_after(filters.published_after)
@@ -116,6 +125,7 @@ async def search_news_records(filters: NewsSearchFilters) -> list[NewsArticle]:
         stmt = stmt.order_by(NewsArticle.source_tier.asc(), NewsArticle.published_at.desc().nullslast())
 
     stmt = stmt.limit(normalized_limit)
+    stmt = stmt.offset(normalized_offset)
 
     async with session_factory() as session:
         return (await session.execute(stmt)).scalars().all()

@@ -274,14 +274,15 @@ pm2 save
 
 ## MCP Features
 
-The MCP server currently registers three tools:
+The MCP server currently registers seven tools:
 
 ### `list_sources`
 
 Purpose:
 
 - discover which sources are available in the local source catalog
-- filter by `categories`, `tiers`, `language`, and `limit`
+- filter by `categories`, `tiers`, `limit`, and `offset`
+- supports both single value and list for `categories`/`tiers` (for example, `"markets"` or `["markets"]`)
 
 Why it exists:
 
@@ -306,8 +307,10 @@ Supported filters:
 - `categories`
 - `sources`
 - `tiers`
-- `language`
+- `offset`
 - `sort`
+- supports both single value and list for `categories`/`sources`/`tiers`
+- `published_after` format: `YYYY-MM-DD` (example: `2026-03-01`)
 
 Design intent:
 
@@ -320,6 +323,31 @@ Implementation:
 - tool: [`src/tools/search.py`](src/tools/search.py)
 - repository: [`src/store/repository.py`](src/store/repository.py)
 
+### `query_news`
+
+Purpose:
+
+- retrieve semantically related news as a ranked list
+
+Input:
+
+- `query`
+- `limit`
+- `offset`
+- `min_score`
+- `published_after` (`YYYY-MM-DD`)
+- `timespan`
+- `categories`
+- `sources`
+- `tiers`
+
+Output extras:
+
+- `query_diagnostics.top_score`
+- `query_diagnostics.threshold_used`
+- `query_diagnostics.candidate_count`
+- `query_diagnostics.applied_filters`
+
 ### `query_related_news_graph`
 
 Purpose:
@@ -331,12 +359,13 @@ Input:
 
 - `query`
 - `limit`
+- `offset`
+- `min_score`
 - `published_after`
 - `timespan`
 - `categories`
 - `sources`
 - `tiers`
-- `language`
 
 Output shape:
 
@@ -349,6 +378,7 @@ Graph semantics:
 - article nodes returned from vector retrieval
 - `query_match` edges from the query to each article
 - `related` edges between articles that are semantically close to each other
+- duplicate content is deduplicated by title/domain/date fingerprinting
 
 Design intent:
 
@@ -358,6 +388,16 @@ Design intent:
 Implementation:
 
 - tool: [`src/tools/query.py`](src/tools/query.py)
+
+### `list_categories`, `list_tiers`, `list_source_names`
+
+Purpose:
+
+- expose valid filter metadata without forcing clients to materialize and deduplicate large `list_sources` responses
+
+Design intent:
+
+- improve discoverability and reduce client-side schema guessing
 
 ## Storage Model
 

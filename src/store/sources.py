@@ -65,6 +65,7 @@ async def list_sources_from_db(
     categories: list[str] | None = None,
     tiers: list[int] | None = None,
     limit: int = 100,
+    offset: int = 0,
 ) -> list[SourceListItem]:
     session_factory = get_session_factory()
     if session_factory is None:
@@ -76,7 +77,8 @@ async def list_sources_from_db(
     if tiers:
         stmt = stmt.where(SourceCatalog.tier.in_(tiers))
 
-    stmt = stmt.order_by(SourceCatalog.tier.asc(), SourceCatalog.category.asc(), SourceCatalog.name.asc()).limit(max(1, min(limit, 500)))
+    stmt = stmt.order_by(SourceCatalog.tier.asc(), SourceCatalog.category.asc(), SourceCatalog.name.asc())
+    stmt = stmt.limit(max(1, min(limit, 500))).offset(max(0, offset))
 
     async with session_factory() as session:
         rows = (await session.execute(stmt)).scalars().all()
@@ -92,3 +94,63 @@ async def list_sources_from_db(
         )
         for row in rows
     ]
+
+
+async def list_source_categories_from_db(*, limit: int = 200, offset: int = 0) -> list[str]:
+    session_factory = get_session_factory()
+    if session_factory is None:
+        raise RuntimeError("Database is not configured.")
+
+    stmt = (
+        select(SourceCatalog.category)
+        .where(SourceCatalog.is_active.is_(True))
+        .distinct()
+        .order_by(SourceCatalog.category.asc())
+        .limit(max(1, min(limit, 500)))
+        .offset(max(0, offset))
+    )
+    async with session_factory() as session:
+        rows = (await session.execute(stmt)).scalars().all()
+    return [str(row) for row in rows]
+
+
+async def list_source_tiers_from_db(*, limit: int = 20, offset: int = 0) -> list[int]:
+    session_factory = get_session_factory()
+    if session_factory is None:
+        raise RuntimeError("Database is not configured.")
+
+    stmt = (
+        select(SourceCatalog.tier)
+        .where(SourceCatalog.is_active.is_(True))
+        .distinct()
+        .order_by(SourceCatalog.tier.asc())
+        .limit(max(1, min(limit, 500)))
+        .offset(max(0, offset))
+    )
+    async with session_factory() as session:
+        rows = (await session.execute(stmt)).scalars().all()
+    return [int(row) for row in rows]
+
+
+async def list_source_names_from_db(
+    *,
+    categories: list[str] | None = None,
+    tiers: list[int] | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[str]:
+    session_factory = get_session_factory()
+    if session_factory is None:
+        raise RuntimeError("Database is not configured.")
+
+    stmt = select(SourceCatalog.name).where(SourceCatalog.is_active.is_(True))
+    if categories:
+        stmt = stmt.where(SourceCatalog.category.in_(categories))
+    if tiers:
+        stmt = stmt.where(SourceCatalog.tier.in_(tiers))
+
+    stmt = stmt.order_by(SourceCatalog.name.asc()).limit(max(1, min(limit, 500))).offset(max(0, offset))
+
+    async with session_factory() as session:
+        rows = (await session.execute(stmt)).scalars().all()
+    return [str(row) for row in rows]
