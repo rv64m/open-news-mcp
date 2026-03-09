@@ -4,7 +4,13 @@ from src.config import settings
 from src.store.db import resolve_database_url
 from src.tools.query import query_news, query_related_news_graph
 from src.tools.search import search_news
-from src.tools.sources import list_categories, list_source_names, list_sources, list_tiers
+from src.tools.sources import (
+    list_categories,
+    list_filter_metadata,
+    list_source_names,
+    list_sources,
+    list_tiers,
+)
 
 
 mcp = FastMCP("news", host=settings.host, port=settings.port)
@@ -15,6 +21,7 @@ mcp.add_tool(list_sources)
 mcp.add_tool(list_categories)
 mcp.add_tool(list_tiers)
 mcp.add_tool(list_source_names)
+mcp.add_tool(list_filter_metadata)
 
 
 def main() -> None:

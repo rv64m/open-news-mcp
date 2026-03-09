@@ -7,8 +7,9 @@ from .news import (
     mark_news_as_embedded,
     persist_news_payloads,
 )
-from .repository import NewsSearchFilters, search_news_records
+from .repository import NewsSearchFilters, count_news_records, search_news_records
 from .sources import (
+    list_filter_metadata_from_db,
     list_source_categories_from_db,
     list_source_names_from_db,
     list_source_tiers_from_db,
@@ -23,6 +24,8 @@ __all__ = [
     "fetch_news_by_ids",
     "fetch_news_by_urls",
     "fetch_unembedded_news",
+    "count_news_records",
+    "list_filter_metadata_from_db",
     "list_source_categories_from_db",
     "list_source_names_from_db",
     "list_source_tiers_from_db",

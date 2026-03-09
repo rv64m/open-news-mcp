@@ -2,6 +2,7 @@ import json
 from typing import Any
 
 from ..store import (
+    list_filter_metadata_from_db,
     list_source_categories_from_db,
     list_source_names_from_db,
     list_source_tiers_from_db,
@@ -165,6 +166,33 @@ async def list_source_names(
                 "next_offset": normalized_offset + len(names),
             },
             "source_names": names,
+        },
+        indent=2,
+    )
+
+
+async def list_filter_metadata() -> str:
+    """
+    Return all available categories / tiers / source names in one response.
+    """
+    try:
+        metadata = await list_filter_metadata_from_db()
+    except Exception as exc:
+        return error_result(
+            "LIST_FILTER_METADATA_FAILED",
+            "Error listing filter metadata.",
+            details={"reason": str(exc)},
+        )
+
+    return json.dumps(
+        {
+            "ok": True,
+            "metadata": metadata,
+            "counts": {
+                "categories": len(metadata["categories"]),
+                "tiers": len(metadata["tiers"]),
+                "source_names": len(metadata["source_names"]),
+            },
         },
         indent=2,
     )

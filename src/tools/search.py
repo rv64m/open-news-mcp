@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from ..store import NewsSearchFilters, search_news_records
+from ..store import NewsSearchFilters, count_news_records, search_news_records
 from .common import (
     ToolArgumentError,
     error_result,
@@ -76,6 +76,18 @@ async def search_news(
                 sort=normalized_sort,  # type: ignore[arg-type]
             )
         )
+        matched_before_pagination = await count_news_records(
+            NewsSearchFilters(
+                limit=normalized_limit,
+                offset=normalized_offset,
+                published_after=normalized_published_after,
+                timespan=normalized_timespan,
+                categories=normalized_categories,
+                sources=normalized_sources,
+                tiers=normalized_tiers,
+                sort=normalized_sort,  # type: ignore[arg-type]
+            )
+        )
     except ToolArgumentError as exc:
         return error_result("INVALID_ARGUMENT", str(exc), field=exc.field)
     except ValueError as exc:
@@ -98,6 +110,7 @@ async def search_news(
                 "next_offset": normalized_offset + len(articles),
             },
             "query_diagnostics": {
+                "matched_before_pagination": matched_before_pagination,
                 "applied_filters": {
                     "published_after": normalized_published_after,
                     "timespan": normalized_timespan,

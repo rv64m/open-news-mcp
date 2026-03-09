@@ -274,7 +274,7 @@ pm2 save
 
 ## MCP Features
 
-The MCP server currently registers seven tools:
+The MCP server currently registers eight tools:
 
 ### `list_sources`
 
@@ -317,6 +317,10 @@ Design intent:
 - this is the structured retrieval tool
 - it does not perform fuzzy or semantic matching
 - it is useful when an agent already knows the scope it wants
+
+Output extras:
+
+- `query_diagnostics.matched_before_pagination`
 
 Implementation:
 
@@ -389,11 +393,12 @@ Implementation:
 
 - tool: [`src/tools/query.py`](src/tools/query.py)
 
-### `list_categories`, `list_tiers`, `list_source_names`
+### `list_categories`, `list_tiers`, `list_source_names`, `list_filter_metadata`
 
 Purpose:
 
 - expose valid filter metadata without forcing clients to materialize and deduplicate large `list_sources` responses
+- `list_filter_metadata` returns all categories/tiers/source names in one roundtrip for clean client bootstrap
 
 Design intent:
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -154,3 +155,38 @@ async def list_source_names_from_db(
     async with session_factory() as session:
         rows = (await session.execute(stmt)).scalars().all()
     return [str(row) for row in rows]
+
+
+async def list_filter_metadata_from_db() -> dict[str, list[Any]]:
+    session_factory = get_session_factory()
+    if session_factory is None:
+        raise RuntimeError("Database is not configured.")
+
+    categories_stmt = (
+        select(SourceCatalog.category)
+        .where(SourceCatalog.is_active.is_(True))
+        .distinct()
+        .order_by(SourceCatalog.category.asc())
+    )
+    tiers_stmt = (
+        select(SourceCatalog.tier)
+        .where(SourceCatalog.is_active.is_(True))
+        .distinct()
+        .order_by(SourceCatalog.tier.asc())
+    )
+    names_stmt = (
+        select(SourceCatalog.name)
+        .where(SourceCatalog.is_active.is_(True))
+        .order_by(SourceCatalog.name.asc())
+    )
+
+    async with session_factory() as session:
+        categories = (await session.execute(categories_stmt)).scalars().all()
+        tiers = (await session.execute(tiers_stmt)).scalars().all()
+        names = (await session.execute(names_stmt)).scalars().all()
+
+    return {
+        "categories": [str(row) for row in categories],
+        "tiers": [int(row) for row in tiers],
+        "source_names": [str(row) for row in names],
+    }
