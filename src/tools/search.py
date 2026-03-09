@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from ..store import NewsSearchFilters, search_news_records
+from ..store.repository import SearchSort
 
 
 def _error_result(code: str, message: str, details: dict[str, Any] | None = None) -> str:
@@ -47,7 +48,7 @@ async def search_news(
     categories: list[str] | None = None,
     sources: list[str] | None = None,
     tiers: list[int] | None = None,
-    sort: str = "DateDesc",
+    sort: SearchSort = "published_at_desc",
 ) -> str:
     """
     Browse normalized news articles from the local database using structured filters.

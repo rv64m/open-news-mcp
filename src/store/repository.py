@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 from sqlalchemy import and_, select
 
@@ -10,6 +11,7 @@ from .models import NewsArticle
 
 
 MAX_LIMIT = 50
+SearchSort = Literal["published_at_desc", "published_at_asc", "tier_asc", "DateDesc", "DateAsc", "TierAsc"]
 
 
 @dataclass(slots=True)
@@ -20,7 +22,7 @@ class NewsSearchFilters:
     categories: list[str] | None = None
     sources: list[str] | None = None
     tiers: list[int] | None = None
-    sort: str = "DateDesc"
+    sort: SearchSort = "published_at_desc"
 
 
 def _normalize_limit(limit: int) -> int:
@@ -57,12 +59,22 @@ def _parse_timespan(value: str | None) -> datetime | None:
     raise ValueError("timespan must use suffix m, h, or d.")
 
 
-def _normalize_sort(sort: str) -> str:
+def _normalize_sort(sort: SearchSort) -> SearchSort:
     normalized = sort.strip()
-    valid = {"DateDesc", "DateAsc", "TierAsc"}
+    valid = {
+        "published_at_desc",
+        "published_at_asc",
+        "tier_asc",
+        "DateDesc",
+        "DateAsc",
+        "TierAsc",
+    }
     if normalized not in valid:
-        raise ValueError(f"Unsupported sort '{sort}'. Use one of: {sorted(valid)}")
-    return normalized
+        raise ValueError(
+            "Unsupported sort "
+            f"'{sort}'. Use one of: ['published_at_desc', 'published_at_asc', 'tier_asc', 'DateDesc', 'DateAsc', 'TierAsc']"
+        )
+    return normalized  # type: ignore[return-value]
 
 
 async def search_news_records(filters: NewsSearchFilters) -> list[NewsArticle]:
@@ -96,9 +108,9 @@ async def search_news_records(filters: NewsSearchFilters) -> list[NewsArticle]:
         conditions.append(NewsArticle.source_tier.in_(filters.tiers))
 
     stmt = select(NewsArticle).where(and_(*conditions))
-    if normalized_sort == "DateDesc":
+    if normalized_sort in {"published_at_desc", "DateDesc"}:
         stmt = stmt.order_by(NewsArticle.published_at.desc().nullslast(), NewsArticle.id.desc())
-    elif normalized_sort == "DateAsc":
+    elif normalized_sort in {"published_at_asc", "DateAsc"}:
         stmt = stmt.order_by(NewsArticle.published_at.asc().nullslast(), NewsArticle.id.asc())
     else:
         stmt = stmt.order_by(NewsArticle.source_tier.asc(), NewsArticle.published_at.desc().nullslast())
