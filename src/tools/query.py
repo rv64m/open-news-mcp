@@ -1,5 +1,6 @@
 import json
 import math
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -50,6 +51,38 @@ def _parse_timespan(value: str | None) -> datetime | None:
     if unit == "d":
         return now - timedelta(days=amount)
     raise ValueError("timespan must use suffix m, h, or d.")
+
+
+def _normalize_string_list(value: Any, *, field_name: str) -> list[str] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        parts = [part.strip() for part in re.split(r"[\s,]+", value.strip()) if part.strip()]
+        return parts or None
+    if isinstance(value, (list, tuple, set)):
+        normalized = [str(item).strip() for item in value if str(item).strip()]
+        return normalized or None
+    raise ValueError(f"{field_name} must be a string or a list of strings.")
+
+
+def _normalize_int_list(value: Any, *, field_name: str) -> list[int] | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        parts = [part.strip() for part in re.split(r"[\s,]+", value.strip()) if part.strip()]
+        if not parts:
+            return None
+        try:
+            return [int(part) for part in parts]
+        except ValueError as exc:
+            raise ValueError(f"{field_name} must contain integers.") from exc
+    if isinstance(value, (list, tuple, set)):
+        try:
+            normalized = [int(item) for item in value]
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{field_name} must contain integers.") from exc
+        return normalized or None
+    raise ValueError(f"{field_name} must be a string or a list of integers.")
 
 
 def _article_matches_filters(
@@ -170,9 +203,9 @@ async def query_related_news_graph(
     limit: int = 10,
     published_after: str | None = None,
     timespan: str | None = None,
-    categories: list[str] | None = None,
-    sources: list[str] | None = None,
-    tiers: list[int] | None = None,
+    categories: Any | None = None,
+    sources: Any | None = None,
+    tiers: Any | None = None,
     language: str | None = None,
 ) -> str:
     """
@@ -190,9 +223,13 @@ async def query_related_news_graph(
         if published_cutoff and timespan_cutoff:
             cutoff = max(published_cutoff, timespan_cutoff)
 
-        categories_set = set(categories or []) or None
-        sources_set = set(sources or []) or None
-        tiers_set = set(tiers or []) or None
+        normalized_categories = _normalize_string_list(categories, field_name="categories")
+        normalized_sources = _normalize_string_list(sources, field_name="sources")
+        normalized_tiers = _normalize_int_list(tiers, field_name="tiers")
+
+        categories_set = set(normalized_categories or []) or None
+        sources_set = set(normalized_sources or []) or None
+        tiers_set = set(normalized_tiers or []) or None
 
         embedding_provider = get_embedding_provider()
         vector_store = get_vector_store()
